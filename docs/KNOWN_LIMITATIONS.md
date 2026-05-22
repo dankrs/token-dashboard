@@ -10,7 +10,7 @@ It's still a useful view — you can see which skills dominate your session time
 
 ## Cost for Pro / Max / Max-20x users is shown as API-equivalent, not subscription value
 
-The Settings route lets you select your pricing plan, but the Overview cost number is always the API-equivalent (what the same usage would have cost on pay-per-token rates). If you're on Pro you pay a flat $20/month regardless of how much of that API-equivalent number you rack up. We don't do "subscription ROI" math yet — Anthropic doesn't publish per-plan rate limits as public JSON, and faking it would be worse than not doing it.
+The Settings route lets you select your pricing plan, but the Overview cost number is always the API-equivalent (what the same usage would have cost on pay-per-token rates). If you're on Pro you pay a flat $20/month regardless of how much of that API-equivalent number you rack up. We don't do "subscription ROI" math yet — Anthropic doesn't publish per-plan rate limits as public JSON, and faking it would be worse than not doing it. The Trends tab adds a monthly budget so you can track that API-equivalent number against a target you set, but it's still API-equivalent value, not subscription ROI.
 
 ## Cowork sessions are invisible
 
