@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from .db import connect
+from .db import connect, model_breakdown, project_model_breakdown, best_project_name
 from .pricing import cost_for, get_budget
 from .trends import trends_summary
 
@@ -202,6 +202,138 @@ def budget_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]
     }]
 
 
+def project_concentration_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
+    today_iso = today_iso or datetime.utcnow().isoformat()
+    since = _iso_days_ago(today_iso, 7)
+    by_proj = {}
+    for r in project_model_breakdown(db_path, since=since):
+        c = cost_for(r["model"], r, pricing)
+        if c["usd"] is not None:
+            by_proj[r["project_slug"]] = by_proj.get(r["project_slug"], 0.0) + c["usd"]
+    total = sum(by_proj.values())
+    if total < 1.0:
+        return []
+    slug, cost = max(by_proj.items(), key=lambda kv: kv[1])
+    share = cost / total
+    if share < 0.60:
+        return []
+    key = _key("concentration", slug)
+    if _is_dismissed(db_path, key):
+        return []
+    with connect(db_path) as c:
+        cwds = [x["cwd"] for x in c.execute(
+            "SELECT DISTINCT cwd FROM messages WHERE project_slug=? AND cwd IS NOT NULL", (slug,))]
+    name = best_project_name(cwds, slug)
+    return [{
+        "key": key, "category": "cost-project",
+        "title": f"{name} is {share*100:.0f}% of the last 7 days' cost",
+        "body": f"{name} drove ${cost:.2f} of ${total:.2f} API-equivalent spend over the last 7 days. If you're trimming cost, that's where it pays off.",
+        "scope": slug,
+    }]
+
+
+def expensive_prompt_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
+    today_iso = today_iso or datetime.utcnow().isoformat()
+    since = _iso_days_ago(today_iso, 7)
+    sql = """
+      SELECT a.uuid AS auuid, a.model,
+             COALESCE(a.input_tokens,0) i, COALESCE(a.output_tokens,0) o,
+             COALESCE(a.cache_read_tokens,0) cr,
+             COALESCE(a.cache_create_5m_tokens,0) c5, COALESCE(a.cache_create_1h_tokens,0) c1
+        FROM messages u
+        JOIN messages a ON a.parent_uuid = u.uuid AND a.type='assistant'
+       WHERE u.type='user' AND a.timestamp >= ?
+    """
+    best = None
+    with connect(db_path) as c:
+        for r in c.execute(sql, (since,)):
+            usage = {"input_tokens": r["i"], "output_tokens": r["o"], "cache_read_tokens": r["cr"],
+                     "cache_create_5m_tokens": r["c5"], "cache_create_1h_tokens": r["c1"]}
+            cost = cost_for(r["model"], usage, pricing)["usd"] or 0.0
+            if best is None or cost > best[0]:
+                best = (cost, r["auuid"], usage)
+    if not best or best[0] < 0.50:
+        return []
+    cost, auuid, usage = best
+    key = _key("expensive-prompt", auuid)
+    if _is_dismissed(db_path, key):
+        return []
+    tokens = usage["input_tokens"] + usage["output_tokens"] + usage["cache_create_5m_tokens"] + usage["cache_create_1h_tokens"]
+    return [{
+        "key": key, "category": "cost-prompt",
+        "title": f"Your priciest prompt cost ~${cost:.2f}",
+        "body": f"One prompt in the last 7 days cost ~${cost:.2f} ({tokens:,} billable tokens). Open the Prompts tab to see which one and why.",
+        "scope": auuid,
+    }]
+
+
+def cache_rebuild_cost_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
+    today_iso = today_iso or datetime.utcnow().isoformat()
+    since = _iso_days_ago(today_iso, 7)
+    total = 0.0
+    cache_create = 0.0
+    for r in model_breakdown(db_path, since=since):
+        c = cost_for(r["model"], r, pricing)
+        if c["usd"] is None:
+            continue
+        total += c["usd"]
+        cache_create += c["breakdown"]["cache_create_5m"] + c["breakdown"]["cache_create_1h"]
+    if cache_create < 1.0 or total <= 0 or (cache_create / total) < 0.30:
+        return []
+    key = _key("cache-rebuild", "7d")
+    if _is_dismissed(db_path, key):
+        return []
+    share = cache_create / total
+    return [{
+        "key": key, "category": "cost-cache",
+        "title": f"${cache_create:.2f} went to re-creating cache this week",
+        "body": f"Cache creation was ${cache_create:.2f} ({share*100:.0f}%) of the last 7 days' ${total:.2f}. Longer-lived sessions reuse cache instead of rebuilding it after each restart.",
+        "scope": "7d",
+    }]
+
+
+def output_heavy_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
+    today_iso = today_iso or datetime.utcnow().isoformat()
+    since = _iso_days_ago(today_iso, 7)
+    sql = """
+      SELECT session_id, COALESCE(model,'unknown') AS model,
+             COALESCE(SUM(input_tokens),0) AS input_tokens,
+             COALESCE(SUM(output_tokens),0) AS output_tokens,
+             COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens,
+             COALESCE(SUM(cache_create_5m_tokens),0) AS cache_create_5m_tokens,
+             COALESCE(SUM(cache_create_1h_tokens),0) AS cache_create_1h_tokens
+        FROM messages WHERE type='assistant' AND timestamp >= ?
+       GROUP BY session_id, model
+    """
+    sess = {}
+    with connect(db_path) as c:
+        for r in c.execute(sql, (since,)):
+            cc = cost_for(r["model"], r, pricing)
+            if cc["usd"] is None:
+                continue
+            d = sess.setdefault(r["session_id"], {"cost": 0.0, "output": 0.0})
+            d["cost"] += cc["usd"]
+            d["output"] += cc["breakdown"]["output"]
+    best = None
+    for sid, d in sess.items():
+        if d["cost"] >= 1.0 and (d["output"] / d["cost"]) >= 0.60:
+            if best is None or d["cost"] > best[1]["cost"]:
+                best = (sid, d)
+    if not best:
+        return []
+    sid, d = best
+    key = _key("output-heavy", sid)
+    if _is_dismissed(db_path, key):
+        return []
+    share = d["output"] / d["cost"]
+    return [{
+        "key": key, "category": "cost-output",
+        "title": f"A session spent ${d['cost']:.2f}, mostly on output",
+        "body": f"One session in the last 7 days cost ${d['cost']:.2f} with {share*100:.0f}% from output tokens. Large generated outputs (big files, verbose answers) dominate its cost.",
+        "scope": sid,
+    }]
+
+
 def all_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
     return [
         *cache_discipline_tips(db_path, today_iso),
@@ -209,4 +341,8 @@ def all_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
         *right_size_tips(db_path, pricing, today_iso),
         *outlier_tips(db_path, today_iso),
         *budget_tips(db_path, pricing, today_iso),
+        *project_concentration_tips(db_path, pricing, today_iso),
+        *expensive_prompt_tips(db_path, pricing, today_iso),
+        *cache_rebuild_cost_tips(db_path, pricing, today_iso),
+        *output_heavy_tips(db_path, pricing, today_iso),
     ]
