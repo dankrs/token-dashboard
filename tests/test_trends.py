@@ -5,7 +5,7 @@ from datetime import datetime
 
 from token_dashboard.db import init_db, connect
 from token_dashboard.pricing import load_pricing, set_budget
-from token_dashboard.trends import cost_daily, trends_summary
+from token_dashboard.trends import cost_daily, trends_summary, cost_drivers
 
 PRICING = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pricing.json"))
 MOD = "-5 hours"  # deterministic stand-in for CDT localtime
@@ -74,6 +74,42 @@ class TrendsSummaryTests(unittest.TestCase):
         set_budget(self.db, 100)           # 15/100 = 15% -> ok
         s = trends_summary(self.db, self.p, now=self.now, day_modifier=MOD)
         self.assertEqual(s["budget"]["status"], "ok")
+
+
+class CostDriversTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(); self.db = os.path.join(self.tmp, "t.db"); init_db(self.db)
+        self.p = load_pricing(PRICING)
+        with connect(self.db) as c:
+            # opus: 1M input ($5) + 1M output ($25) in projA  (explicit project_slug)
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, input_tokens, output_tokens) "
+                      "VALUES ('a','s','projA','assistant','2026-05-11T12:00:00Z','claude-opus-4-7',1000000,1000000)")
+            # sonnet: 1M output ($15) in projB
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, output_tokens) "
+                      "VALUES ('b','s','projB','assistant','2026-05-11T12:00:00Z','claude-sonnet-4-6',1000000)")
+            c.commit()
+
+    def test_total_and_by_type(self):
+        d = cost_drivers(self.db, self.p)
+        self.assertAlmostEqual(d["total_usd"], 45.00, places=4)  # 5+25+15
+        bt = {x["type"]: x["cost_usd"] for x in d["by_type"]}
+        self.assertAlmostEqual(bt["output"], 40.00, places=4)  # 25 opus + 15 sonnet
+        self.assertAlmostEqual(bt["input"], 5.00, places=4)
+
+    def test_by_model_and_project_sorted(self):
+        d = cost_drivers(self.db, self.p)
+        self.assertEqual(d["by_model"][0]["model"], "claude-opus-4-7")  # $30 > $15
+        self.assertAlmostEqual(d["by_model"][0]["cost_usd"], 30.00, places=4)
+        self.assertEqual(d["by_project"][0]["project_slug"], "projA")   # $30 > $15
+        self.assertAlmostEqual(d["by_project"][0]["pct"], 30.0 / 45.0, places=3)
+
+    def test_empty_window(self):
+        empty_db = os.path.join(self.tmp, "e.db"); init_db(empty_db)
+        d = cost_drivers(empty_db, self.p)
+        self.assertEqual(d["total_usd"], 0.0)
+        self.assertEqual(d["by_type"], [])
+        self.assertEqual(d["by_model"], [])
+        self.assertEqual(d["by_project"], [])
 
 
 if __name__ == "__main__":

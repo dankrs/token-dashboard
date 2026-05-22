@@ -189,6 +189,14 @@ button.ghost { background: transparent; color: var(--muted); }
 .kpi .sub .delta.up   { color: var(--good); }
 .kpi .sub .delta.down { color: var(--bad); }
 
+/* labeled cost bars (Trends -> Cost drivers) */
+.driver-h { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 10px; }
+.bar-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12px; }
+.bar-label { width: 84px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.bar-track { flex: 1; height: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 4px; }
+.bar-val { width: 92px; text-align: right; font-family: var(--mono); }
+
 /* live indicator (Live tab) */
 .live-dot {
   width: 10px; height: 10px; border-radius: 50%;

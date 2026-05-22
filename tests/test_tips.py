@@ -7,6 +7,8 @@ from token_dashboard.pricing import load_pricing, set_budget
 from token_dashboard.tips import (
     cache_discipline_tips, repeated_target_tips, right_size_tips,
     outlier_tips, all_tips, dismiss_tip, budget_tips,
+    project_concentration_tips, expensive_prompt_tips,
+    cache_rebuild_cost_tips, output_heavy_tips,
 )
 
 _PRICING = load_pricing(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pricing.json")))
@@ -135,6 +137,64 @@ class BudgetTipTests(unittest.TestCase):
         set_budget(self.db, 18)
         tips = all_tips(self.db, _PRICING, today_iso=self.now_iso)
         self.assertTrue(any(t["category"] == "budget" for t in tips))
+
+
+class CostDriverTipTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(); self.db = os.path.join(self.tmp, "t.db"); init_db(self.db)
+        self.now = "2026-05-21T12:00:00"
+
+    def _a(self, uuid, sid, project, ts, model="claude-opus-4-7", inp=0, out=0, parent=None):
+        with connect(self.db) as c:
+            c.execute("INSERT INTO messages (uuid, parent_uuid, session_id, project_slug, type, timestamp, model, input_tokens, output_tokens) "
+                      "VALUES (?, ?, ?, ?, 'assistant', ?, ?, ?, ?)", (uuid, parent, sid, project, ts, model, inp, out))
+            c.commit()
+
+    def _u(self, uuid, sid, project, ts):
+        with connect(self.db) as c:
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, prompt_text) "
+                      "VALUES (?, ?, ?, 'user', ?, 'do a thing')", (uuid, sid, project, ts))
+            c.commit()
+
+    def test_project_concentration_fires(self):
+        self._a("a1", "s", "projA", "2026-05-20T12:00:00Z", inp=2_000_000)  # $10 opus input
+        self._a("a2", "s", "projB", "2026-05-20T12:00:00Z", inp=200_000)    # $1 opus input
+        tips = project_concentration_tips(self.db, _PRICING, today_iso=self.now)
+        self.assertEqual(len(tips), 1)
+        self.assertEqual(tips[0]["category"], "cost-project")
+
+    def test_expensive_prompt_fires(self):
+        self._u("u1", "s", "projA", "2026-05-20T12:00:00Z")
+        self._a("a1", "s", "projA", "2026-05-20T12:00:01Z", inp=0, out=200_000, parent="u1")  # $5 output
+        tips = expensive_prompt_tips(self.db, _PRICING, today_iso=self.now)
+        self.assertEqual(len(tips), 1)
+        self.assertEqual(tips[0]["category"], "cost-prompt")
+
+    def test_cache_rebuild_fires(self):
+        with connect(self.db) as c:
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, cache_create_5m_tokens) "
+                      "VALUES ('a1','s','projA','assistant','2026-05-20T12:00:00Z','claude-opus-4-7',1000000)")  # $6.25, 100% cache-create
+            c.commit()
+        tips = cache_rebuild_cost_tips(self.db, _PRICING, today_iso=self.now)
+        self.assertEqual(len(tips), 1)
+        self.assertEqual(tips[0]["category"], "cost-cache")
+
+    def test_output_heavy_fires(self):
+        self._a("a1", "s", "projA", "2026-05-20T12:00:00Z", out=200_000)  # $5, 100% output
+        tips = output_heavy_tips(self.db, _PRICING, today_iso=self.now)
+        self.assertEqual(len(tips), 1)
+        self.assertEqual(tips[0]["category"], "cost-output")
+
+    def test_silent_when_cheap(self):
+        self._a("a1", "s", "projA", "2026-05-20T12:00:00Z", inp=1000)  # ~$0.005
+        self.assertEqual(project_concentration_tips(self.db, _PRICING, today_iso=self.now), [])
+        self.assertEqual(cache_rebuild_cost_tips(self.db, _PRICING, today_iso=self.now), [])
+        self.assertEqual(output_heavy_tips(self.db, _PRICING, today_iso=self.now), [])
+
+    def test_all_tips_includes_cost_rules(self):
+        self._a("a1", "s", "projA", "2026-05-20T12:00:00Z", inp=2_000_000)  # $10, one project
+        cats = {t["category"] for t in all_tips(self.db, _PRICING, today_iso=self.now)}
+        self.assertIn("cost-project", cats)
 
 
 if __name__ == "__main__":

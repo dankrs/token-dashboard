@@ -2,7 +2,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from token_dashboard.db import init_db, connect, daily_model_breakdown, daily_token_breakdown
+from token_dashboard.db import init_db, connect, daily_model_breakdown, daily_token_breakdown, project_model_breakdown
 
 
 class InitDbTests(unittest.TestCase):
@@ -54,6 +54,27 @@ class DailyLocalBucketTests(unittest.TestCase):
     def test_token_breakdown_accepts_modifier(self):
         rows = daily_token_breakdown(self.db, day_modifier="-5 hours")
         self.assertEqual(sorted(r["day"] for r in rows), ["2026-05-11", "2026-05-12"])
+
+
+class ProjectModelBreakdownTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(); self.db = os.path.join(self.tmp, "t.db"); init_db(self.db)
+        with connect(self.db) as c:
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, input_tokens) VALUES ('a','s','projA','assistant','2026-05-10T12:00:00Z','claude-opus-4-7',100)")
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, input_tokens) VALUES ('b','s','projA','assistant','2026-05-11T12:00:00Z','claude-opus-4-7',200)")
+            c.execute("INSERT INTO messages (uuid, session_id, project_slug, type, timestamp, model, input_tokens) VALUES ('c','s','projB','assistant','2026-05-11T12:00:00Z','claude-sonnet-4-6',50)")
+            c.commit()
+
+    def test_groups_by_project_and_model(self):
+        rows = project_model_breakdown(self.db)
+        keyed = {(r["project_slug"], r["model"]): r["input_tokens"] for r in rows}
+        self.assertEqual(keyed[("projA", "claude-opus-4-7")], 300)
+        self.assertEqual(keyed[("projB", "claude-sonnet-4-6")], 50)
+
+    def test_respects_since(self):
+        rows = project_model_breakdown(self.db, since="2026-05-11T00:00:00Z")
+        keyed = {(r["project_slug"], r["model"]): r["input_tokens"] for r in rows}
+        self.assertEqual(keyed[("projA", "claude-opus-4-7")], 200)  # only 05-11 row
 
 
 if __name__ == "__main__":

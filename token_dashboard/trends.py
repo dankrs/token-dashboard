@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, date, timedelta
 
-from .db import daily_model_breakdown
-from .pricing import cost_for, get_budget
+from .db import daily_model_breakdown, model_breakdown, project_model_breakdown, best_project_name, connect
+from .pricing import cost_for, get_budget, total_cost
 
 
 def cost_daily(db_path, pricing, since=None, until=None, day_modifier="localtime"):
@@ -15,6 +15,57 @@ def cost_daily(db_path, pricing, since=None, until=None, day_modifier="localtime
         if c["usd"] is not None:
             by_day[r["day"]] = by_day.get(r["day"], 0.0) + c["usd"]
     return [{"day": d, "cost_usd": round(v, 6)} for d, v in sorted(by_day.items())]
+
+
+def cost_drivers(db_path, pricing, since=None, until=None):
+    """Cost composition for a window: by token type, model, and project.
+
+    Reuses cost_for's per-type breakdown so there is no separate rate math.
+    """
+    by_type = {"input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_create": 0.0}
+    by_model = []
+    for r in model_breakdown(db_path, since, until):
+        c = cost_for(r["model"], r, pricing)
+        if c["usd"] is None:
+            continue
+        bd = c["breakdown"]
+        by_type["input"] += bd["input"]
+        by_type["output"] += bd["output"]
+        by_type["cache_read"] += bd["cache_read"]
+        by_type["cache_create"] += bd["cache_create_5m"] + bd["cache_create_1h"]
+        by_model.append({"model": r["model"], "cost_usd": round(c["usd"], 6)})
+
+    total = round(sum(by_type.values()), 6)
+    if not total:
+        return {"total_usd": 0.0, "by_type": [], "by_model": [], "by_project": []}
+
+    def pct(v):
+        return round(v / total, 4)
+
+    type_list = sorted(
+        ({"type": k, "cost_usd": round(v, 6), "pct": pct(v)} for k, v in by_type.items()),
+        key=lambda d: -d["cost_usd"],
+    )
+    by_model.sort(key=lambda d: -d["cost_usd"])
+    for m in by_model:
+        m["pct"] = pct(m["cost_usd"])
+
+    proj_rows = {}
+    for r in project_model_breakdown(db_path, since, until):
+        proj_rows.setdefault(r["project_slug"], []).append(r)
+    projects = []
+    with connect(db_path) as conn:
+        for slug, rows in proj_rows.items():
+            cost = total_cost(rows, pricing)
+            if cost <= 0:
+                continue
+            cwds = [x["cwd"] for x in conn.execute(
+                "SELECT DISTINCT cwd FROM messages WHERE project_slug=? AND cwd IS NOT NULL", (slug,))]
+            projects.append({"project_slug": slug, "project_name": best_project_name(cwds, slug),
+                             "cost_usd": round(cost, 6), "pct": pct(cost)})
+    projects.sort(key=lambda d: -d["cost_usd"])
+
+    return {"total_usd": total, "by_type": type_list, "by_model": by_model, "by_project": projects[:8]}
 
 
 def _month_start(d: date) -> date:

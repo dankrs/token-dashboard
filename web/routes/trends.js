@@ -26,6 +26,17 @@ function withSince(url, since) {
 
 const usd = v => v == null ? '—' : '$' + Number(v).toFixed(2);
 
+const TYPE_COLORS = { input: '#4A9EFF', output: '#7C5CFF', cache_read: '#3FB68B', cache_create: '#E8A23B' };
+const TYPE_LABELS = { input: 'input', output: 'output', cache_read: 'cache read', cache_create: 'cache create' };
+
+function barRow(label, cost, pct, color, sensitive) {
+  return `<div class="bar-row">
+    <span class="bar-label${sensitive ? ' blur-sensitive' : ''}">${label}</span>
+    <span class="bar-track"><span class="bar-fill" style="width:${(pct * 100).toFixed(1)}%;background:${color || 'var(--accent)'}"></span></span>
+    <span class="bar-val">${usd(cost)} <span class="muted">${(pct * 100).toFixed(0)}%</span></span>
+  </div>`;
+}
+
 function deltaChip(d) {
   if (d == null) return '';
   const up = d >= 0;
@@ -42,9 +53,10 @@ function planNote() {
 
 export default async function render(root) {
   const range = readRange();
-  const [t, daily] = await Promise.all([
+  const [t, daily, drivers] = await Promise.all([
     api('/api/trends'),
     api(withSince('/api/cost-daily', sinceIso(range))),
+    api(withSince('/api/cost-drivers', sinceIso(range))),
   ]);
   const b = t.budget, p = t.periods;
   const pct = b.pct == null ? 0 : Math.min(b.pct, 1);
@@ -52,6 +64,28 @@ export default async function render(root) {
   const spentLine = b.monthly_usd == null
     ? `<b>${usd(b.spent_this_month_usd)}</b> spent this month — no budget set`
     : `<b>${usd(b.spent_this_month_usd)}</b> of <b>${usd(b.monthly_usd)}</b> (${(b.pct * 100).toFixed(0)}%)`;
+
+  const driversCard = drivers.total_usd <= 0
+    ? `<div class="card" style="margin-top:16px"><h3>Cost drivers</h3><p class="muted">No cost in this range.</p></div>`
+    : `
+    <div class="card" style="margin-top:16px">
+      <h3>Cost drivers</h3>
+      <p class="muted" style="margin:-4px 0 14px;font-size:12px">Where your ${usd(drivers.total_usd)} went in this range.</p>
+      <div class="row cols-3">
+        <div>
+          <div class="driver-h muted">By token type</div>
+          ${drivers.by_type.map(d => barRow(TYPE_LABELS[d.type] || d.type, d.cost_usd, d.pct, TYPE_COLORS[d.type])).join('')}
+        </div>
+        <div>
+          <div class="driver-h muted">By model</div>
+          ${drivers.by_model.map(d => barRow(fmt.modelShort(d.model) || d.model, d.cost_usd, d.pct, '#7C5CFF')).join('') || '<p class="muted">—</p>'}
+        </div>
+        <div>
+          <div class="driver-h muted">By project</div>
+          ${drivers.by_project.map(d => barRow(fmt.htmlSafe(d.project_name || d.project_slug), d.cost_usd, d.pct, '#3FB68B', true)).join('') || '<p class="muted">—</p>'}
+        </div>
+      </div>
+    </div>`;
 
   root.innerHTML = `
     <div class="flex" style="margin-bottom:14px">
@@ -84,7 +118,8 @@ export default async function render(root) {
       <h3>Daily cost</h3>
       <p class="muted" style="margin:-4px 0 10px;font-size:12px">API-equivalent $ per day (local time).</p>
       <div id="ch-cost-daily" style="height:300px"></div>
-    </div>`;
+    </div>
+    ${driversCard}`;
 
   root.querySelectorAll('.range-tabs button').forEach(btn =>
     btn.addEventListener('click', () => writeRange(btn.dataset.range)));
