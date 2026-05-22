@@ -17,7 +17,7 @@ from .db import (
 )
 from .pricing import load_pricing, cost_for, get_plan, set_plan, total_cost, set_budget
 from .tips import all_tips, dismiss_tip
-from .trends import cost_daily, trends_summary
+from .trends import cost_daily, trends_summary, cost_drivers
 from .live import live_summary
 from .scanner import scan_dir
 from .skills import cached_catalog
@@ -119,6 +119,8 @@ def build_handler(db_path: str, projects_dir: str):
                 return _send_json(self, daily_token_breakdown(db_path, since, until))
             if path == "/api/cost-daily":
                 return _send_json(self, cost_daily(db_path, pricing, since, until))
+            if path == "/api/cost-drivers":
+                return _send_json(self, cost_drivers(db_path, pricing, since, until))
             if path == "/api/trends":
                 return _send_json(self, trends_summary(db_path, pricing))
             if path == "/api/live":

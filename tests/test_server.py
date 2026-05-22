@@ -96,6 +96,13 @@ class ServerTests(unittest.TestCase):
         body = json.loads(self._get("/api/cost-daily"))
         self.assertIsInstance(body, list)
 
+    def test_cost_drivers_json_shape(self):
+        body = json.loads(self._get("/api/cost-drivers"))
+        self.assertIn("total_usd", body)
+        self.assertIn("by_type", body)
+        self.assertIn("by_model", body)
+        self.assertIn("by_project", body)
+
     def test_trends_json_shape(self):
         body = json.loads(self._get("/api/trends"))
         self.assertIn("budget", body)
