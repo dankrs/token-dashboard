@@ -27,7 +27,7 @@ No `pip install`. No Node.js. No build step.
 ## Quickstart
 
 ```bash
-git clone https://github.com/nateherkai/token-dashboard.git
+git clone https://github.com/dankrs/token-dashboard.git
 cd token-dashboard
 python3 cli.py dashboard
 ```
