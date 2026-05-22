@@ -20,7 +20,7 @@ class CostTests(unittest.TestCase):
 
     def test_known_opus_input_cost(self):
         c = cost_for("claude-opus-4-7", self._u(input_tokens=1_000_000), self.p)
-        self.assertAlmostEqual(c["usd"], 15.00, places=4)
+        self.assertAlmostEqual(c["usd"], 5.00, places=4)
         self.assertFalse(c["estimated"])
 
     def test_known_sonnet_output_cost(self):
@@ -29,8 +29,21 @@ class CostTests(unittest.TestCase):
 
     def test_unknown_opus_falls_back(self):
         c = cost_for("claude-opus-9-9-experimental", self._u(input_tokens=1_000_000), self.p)
-        self.assertAlmostEqual(c["usd"], 15.00, places=4)
+        self.assertAlmostEqual(c["usd"], 5.00, places=4)
         self.assertTrue(c["estimated"])
+
+    def test_opus_rates_match_anthropic_published(self):
+        """Regression guard: Opus 4.5+ is $5/$25, not the old $15/$75.
+
+        Verified against platform.claude.com/docs pricing (May 2026):
+        input $5, output $25, cache_read $0.50, 5m write $6.25, 1h write $10.
+        """
+        per_m = lambda **kw: cost_for("claude-opus-4-7", self._u(**kw), self.p)["usd"]
+        self.assertAlmostEqual(per_m(input_tokens=1_000_000),           5.00, places=4)
+        self.assertAlmostEqual(per_m(output_tokens=1_000_000),         25.00, places=4)
+        self.assertAlmostEqual(per_m(cache_read_tokens=1_000_000),      0.50, places=4)
+        self.assertAlmostEqual(per_m(cache_create_5m_tokens=1_000_000), 6.25, places=4)
+        self.assertAlmostEqual(per_m(cache_create_1h_tokens=1_000_000), 10.00, places=4)
 
     def test_unknown_unparseable_returns_none(self):
         c = cost_for("custom-local-model", self._u(input_tokens=9999), self.p)

@@ -121,7 +121,7 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
         row = c.execute(sql, (since,)).fetchone()
     if not row or (row["n"] or 0) < 10:
         return []
-    api_opus   = ((row["in_tok"] or 0) * 15 + (row["out_tok"] or 0) * 75) / 1_000_000
+    api_opus   = ((row["in_tok"] or 0) *  5 + (row["out_tok"] or 0) * 25) / 1_000_000
     api_sonnet = ((row["in_tok"] or 0) *  3 + (row["out_tok"] or 0) * 15) / 1_000_000
     savings = api_opus - api_sonnet
     if savings < 1.0:
