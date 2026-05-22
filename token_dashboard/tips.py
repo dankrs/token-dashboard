@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from .db import connect
+from .pricing import cost_for, get_budget
+from .trends import trends_summary
 
 
 def _iso_days_ago(today_iso: str, n: int) -> str:
@@ -105,7 +107,7 @@ def repeated_target_tips(db_path, today_iso: Optional[str] = None) -> List[dict]
     return out
 
 
-def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
+def right_size_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
     today_iso = today_iso or datetime.utcnow().isoformat()
     since = _iso_days_ago(today_iso, 7)
     sql = """
@@ -121,8 +123,10 @@ def right_size_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
         row = c.execute(sql, (since,)).fetchone()
     if not row or (row["n"] or 0) < 10:
         return []
-    api_opus   = ((row["in_tok"] or 0) * 15 + (row["out_tok"] or 0) * 75) / 1_000_000
-    api_sonnet = ((row["in_tok"] or 0) *  3 + (row["out_tok"] or 0) * 15) / 1_000_000
+    usage = {"input_tokens": row["in_tok"] or 0, "output_tokens": row["out_tok"] or 0,
+             "cache_read_tokens": 0, "cache_create_5m_tokens": 0, "cache_create_1h_tokens": 0}
+    api_opus = cost_for("claude-opus-4-7", usage, pricing)["usd"] or 0.0
+    api_sonnet = cost_for("claude-sonnet-4-6", usage, pricing)["usd"] or 0.0
     savings = api_opus - api_sonnet
     if savings < 1.0:
         return []
@@ -177,10 +181,32 @@ def outlier_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
     return out
 
 
-def all_tips(db_path, today_iso: Optional[str] = None) -> List[dict]:
+def budget_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
+    now = datetime.fromisoformat(today_iso.replace("Z", "")) if today_iso else None
+    s = trends_summary(db_path, pricing, now=now)
+    b = s["budget"]
+    if b["status"] not in ("warn", "over"):
+        return []
+    month_key = (now or datetime.now()).strftime("%Y-%m")
+    key = _key("budget", month_key)
+    if _is_dismissed(db_path, key):
+        return []
+    pct, spent, target = b["pct"], b["spent_this_month_usd"], b["monthly_usd"]
+    left = target - spent
+    tail = f"${left:.2f} left this month." if left >= 0 else f"${-left:.2f} over budget."
+    return [{
+        "key": key, "category": "budget",
+        "title": f"You've used {pct*100:.0f}% of your ${target:.0f} monthly budget",
+        "body": f"API-equivalent spend this month is ${spent:.2f} of ${target:.0f} ({pct*100:.0f}%). {tail}",
+        "scope": month_key,
+    }]
+
+
+def all_tips(db_path, pricing, today_iso: Optional[str] = None) -> List[dict]:
     return [
         *cache_discipline_tips(db_path, today_iso),
         *repeated_target_tips(db_path, today_iso),
-        *right_size_tips(db_path, today_iso),
+        *right_size_tips(db_path, pricing, today_iso),
         *outlier_tips(db_path, today_iso),
+        *budget_tips(db_path, pricing, today_iso),
     ]

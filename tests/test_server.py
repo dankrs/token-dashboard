@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+import urllib.error
 import urllib.request
 
 from token_dashboard.db import init_db
@@ -74,6 +75,38 @@ class ServerTests(unittest.TestCase):
         with urllib.request.urlopen(req) as resp:
             self.assertEqual(resp.status, 200)
             self.assertEqual(resp.read(), b"")
+
+    def _post(self, path, obj):
+        data = json.dumps(obj).encode()
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=data,
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read())
+
+    def test_cost_daily_json(self):
+        body = json.loads(self._get("/api/cost-daily"))
+        self.assertIsInstance(body, list)
+
+    def test_trends_json_shape(self):
+        body = json.loads(self._get("/api/trends"))
+        self.assertIn("budget", body)
+        self.assertIn("periods", body)
+        self.assertIn("status", body["budget"])
+
+    def test_post_budget_sets_value(self):
+        status, body = self._post("/api/budget", {"monthly_usd": 250})
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        trends = json.loads(self._get("/api/trends"))
+        self.assertEqual(trends["budget"]["monthly_usd"], 250.0)
+
+    def test_post_budget_rejects_junk(self):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/budget",
+                                     data=json.dumps({"monthly_usd": "abc"}).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req)
+        self.assertEqual(ctx.exception.code, 400)
 
 
 if __name__ == "__main__":

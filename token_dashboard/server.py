@@ -15,8 +15,9 @@ from .db import (
     tool_token_breakdown, recent_sessions, session_turns,
     daily_token_breakdown, model_breakdown, skill_breakdown,
 )
-from .pricing import load_pricing, cost_for, get_plan, set_plan
+from .pricing import load_pricing, cost_for, get_plan, set_plan, total_cost, set_budget
 from .tips import all_tips, dismiss_tip
+from .trends import cost_daily, trends_summary
 from .scanner import scan_dir
 from .skills import cached_catalog
 
@@ -90,12 +91,7 @@ def build_handler(db_path: str, projects_dir: str):
                 return _serve_static(self, path[5:])
             if path == "/api/overview":
                 totals = overview_totals(db_path, since, until)
-                cost_usd = 0.0
-                for m in model_breakdown(db_path, since, until):
-                    c = cost_for(m["model"], m, pricing)
-                    if c["usd"] is not None:
-                        cost_usd += c["usd"]
-                totals["cost_usd"] = round(cost_usd, 4)
+                totals["cost_usd"] = round(total_cost(model_breakdown(db_path, since, until), pricing), 4)
                 return _send_json(self, totals)
             if path == "/api/prompts":
                 limit = _clamp_limit(qs.get("limit", ["50"])[0], 50)
@@ -120,6 +116,10 @@ def build_handler(db_path: str, projects_dir: str):
                 ))
             if path == "/api/daily":
                 return _send_json(self, daily_token_breakdown(db_path, since, until))
+            if path == "/api/cost-daily":
+                return _send_json(self, cost_daily(db_path, pricing, since, until))
+            if path == "/api/trends":
+                return _send_json(self, trends_summary(db_path, pricing))
             if path == "/api/skills":
                 rows = skill_breakdown(db_path, since, until)
                 catalog = cached_catalog()
@@ -138,7 +138,7 @@ def build_handler(db_path: str, projects_dir: str):
                 sid = path.rsplit("/", 1)[1]
                 return _send_json(self, session_turns(db_path, sid))
             if path == "/api/tips":
-                return _send_json(self, all_tips(db_path))
+                return _send_json(self, all_tips(db_path, pricing))
             if path == "/api/plan":
                 return _send_json(self, {"plan": get_plan(db_path), "pricing": pricing})
             if path == "/api/scan":
@@ -180,6 +180,15 @@ def build_handler(db_path: str, projects_dir: str):
                 return _send_error(self, 400, "body must be a JSON object")
             if url.path == "/api/plan":
                 set_plan(db_path, body.get("plan", "api"))
+                return _send_json(self, {"ok": True})
+            if url.path == "/api/budget":
+                try:
+                    val = float(body.get("monthly_usd"))
+                except (TypeError, ValueError):
+                    return _send_error(self, 400, "monthly_usd must be a number")
+                if val < 0:
+                    return _send_error(self, 400, "monthly_usd must be non-negative")
+                set_budget(db_path, val)
                 return _send_json(self, {"ok": True})
             if url.path == "/api/tips/dismiss":
                 dismiss_tip(db_path, body.get("key", ""))

@@ -36,14 +36,14 @@ function mount(el) {
   return c;
 }
 
-export function lineChart(el, { x, series }) {
+export function lineChart(el, { x, series, formatter }) {
   const c = mount(el);
   c.setOption({
     ...BASE,
-    tooltip: TOOLTIP,
+    tooltip: { ...TOOLTIP, valueFormatter: formatter },
     legend: { textStyle: { color: '#8B98A6' }, top: 0, right: 0, icon: 'roundRect', itemWidth: 8, itemHeight: 8 },
     xAxis: { ...X_AXIS, type: 'category', data: x, boundaryGap: false },
-    yAxis: { ...Y_AXIS, type: 'value' },
+    yAxis: { ...Y_AXIS, type: 'value', axisLabel: { ...Y_AXIS.axisLabel, formatter } },
     series: series.map(s => ({
       ...s, type: 'line', smooth: true, showSymbol: false,
       areaStyle: { opacity: 0.12 }, lineStyle: { width: 2 },

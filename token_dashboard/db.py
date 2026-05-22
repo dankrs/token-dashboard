@@ -311,11 +311,16 @@ def session_turns(db_path, session_id: str) -> list:
         return [dict(r) for r in c.execute(sql, (session_id,))]
 
 
-def daily_token_breakdown(db_path, since=None, until=None) -> list:
-    """One row per day: stacked bar data for input/output/cache_read/cache_create."""
+def daily_token_breakdown(db_path, since=None, until=None, day_modifier="localtime") -> list:
+    """One row per local day: stacked bar data for input/output/cache_read/cache_create.
+
+    `day_modifier` is a SQLite datetime modifier applied to the UTC-stored timestamp.
+    Production uses 'localtime' (OS tz db, DST-correct); tests pass a fixed offset like
+    '-5 hours' or '+00:00' for determinism.
+    """
     rng, args = _range_clause(since, until)
     sql = f"""
-      SELECT substr(timestamp, 1, 10) AS day,
+      SELECT strftime('%Y-%m-%d', timestamp, ?) AS day,
              COALESCE(SUM(input_tokens),0)      AS input_tokens,
              COALESCE(SUM(output_tokens),0)     AS output_tokens,
              COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens,
@@ -327,7 +332,31 @@ def daily_token_breakdown(db_path, since=None, until=None) -> list:
        ORDER BY day ASC
     """
     with connect(db_path) as c:
-        return [dict(r) for r in c.execute(sql, args)]
+        return [dict(r) for r in c.execute(sql, (day_modifier, *args))]
+
+
+def daily_model_breakdown(db_path, since=None, until=None, day_modifier="localtime") -> list:
+    """Per (local-day, model) token sums. Caller applies pricing.cost_for per row.
+
+    Powers the daily-cost chart and the trends period/budget aggregation. See
+    `daily_token_breakdown` for the `day_modifier` contract.
+    """
+    rng, args = _range_clause(since, until)
+    sql = f"""
+      SELECT strftime('%Y-%m-%d', timestamp, ?)  AS day,
+             COALESCE(model, 'unknown')           AS model,
+             COALESCE(SUM(input_tokens),0)            AS input_tokens,
+             COALESCE(SUM(output_tokens),0)           AS output_tokens,
+             COALESCE(SUM(cache_read_tokens),0)       AS cache_read_tokens,
+             COALESCE(SUM(cache_create_5m_tokens),0)  AS cache_create_5m_tokens,
+             COALESCE(SUM(cache_create_1h_tokens),0)  AS cache_create_1h_tokens
+        FROM messages
+       WHERE type='assistant' AND timestamp IS NOT NULL {rng}
+       GROUP BY day, model
+       ORDER BY day ASC
+    """
+    with connect(db_path) as c:
+        return [dict(r) for r in c.execute(sql, (day_modifier, *args))]
 
 
 def skill_breakdown(db_path, since=None, until=None) -> list:
