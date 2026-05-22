@@ -83,6 +83,15 @@ class ServerTests(unittest.TestCase):
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())
 
+    def test_live_json_shape(self):
+        body = json.loads(self._get("/api/live"))
+        self.assertIn("active", body)
+        self.assertIn("today", body)
+        self.assertIn("cost_usd", body["today"])
+        # fixture has one haiku assistant msg -> active is present
+        self.assertIsNotNone(body["active"])
+        self.assertEqual(body["active"]["session_id"], "s")
+
     def test_cost_daily_json(self):
         body = json.loads(self._get("/api/cost-daily"))
         self.assertIsInstance(body, list)
