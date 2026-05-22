@@ -8,8 +8,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from token_dashboard.db import init_db, default_db_path, overview_totals
+from token_dashboard.pricing import load_pricing
 from token_dashboard.scanner import scan_dir
 from token_dashboard.tips import all_tips
+
+PRICING_JSON = Path(__file__).resolve().parent / "pricing.json"
 
 
 def _db_path(args) -> str:
@@ -61,7 +64,7 @@ def cmd_stats(args):
 def cmd_tips(args):
     db = _db_path(args)
     init_db(db)
-    tips = all_tips(db)
+    tips = all_tips(db, load_pricing(PRICING_JSON))
     if not tips:
         print("Token Dashboard: no suggestions")
         return

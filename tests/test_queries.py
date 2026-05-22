@@ -70,7 +70,9 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(len(rows), 2)
 
     def test_daily_token_breakdown_groups_by_day(self):
-        rows = daily_token_breakdown(self.db)
+        # Pin to UTC so day buckets are deterministic regardless of machine tz.
+        # (Local-time bucketing is covered in test_db.py.)
+        rows = daily_token_breakdown(self.db, day_modifier="+00:00")
         days = {r["day"]: r for r in rows}
         self.assertIn("2026-04-10", days)
         self.assertIn("2026-04-11", days)
@@ -79,7 +81,7 @@ class QueryTests(unittest.TestCase):
         self.assertEqual(days["2026-04-10"]["cache_read_tokens"], 300)
 
     def test_daily_token_breakdown_respects_since(self):
-        rows = daily_token_breakdown(self.db, since="2026-04-11T00:00:00Z")
+        rows = daily_token_breakdown(self.db, since="2026-04-11T00:00:00Z", day_modifier="+00:00")
         days = [r["day"] for r in rows]
         self.assertEqual(days, ["2026-04-11"])
 
