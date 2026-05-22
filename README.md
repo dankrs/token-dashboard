@@ -55,6 +55,8 @@ Claude Code writes one JSONL file per session here:
 
 The dashboard never modifies those files — it only reads them and keeps a local SQLite cache at `~/.claude/token-dashboard.db`.
 
+**Scope — Claude Code only.** This dashboard reads the local transcripts Claude Code writes, which is the only Claude surface that records per-token usage to disk. It does **not** cover chat conversations from the Claude Desktop app (or claude.ai): those are stored server-side in your Anthropic account rather than locally, so there's no per-token data to read. (Subscription chat is also flat-rate rather than per-token billed, so it wouldn't map onto the cost analytics here anyway.)
+
 To point at a different location:
 
 ```bash
