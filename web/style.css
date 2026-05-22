@@ -180,6 +180,15 @@ button.ghost { background: transparent; color: var(--muted); }
 }
 .range-tabs button.active { background: var(--bg); color: var(--text); }
 
+/* budget bar (Trends) */
+.budget-bar { height: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.budget-fill { height: 100%; background: var(--good); border-radius: 6px 0 0 6px; transition: width 200ms; }
+.budget-fill.warn { background: var(--warn); }
+.budget-fill.over { background: var(--bad); }
+.kpi .sub .delta { font-family: var(--mono); font-size: 11px; }
+.kpi .sub .delta.up   { color: var(--good); }
+.kpi .sub .delta.down { color: var(--bad); }
+
 /* privacy blur */
 .blur-sensitive { transition: filter 120ms; }
 body.privacy-on .blur-sensitive { filter: blur(6px); }

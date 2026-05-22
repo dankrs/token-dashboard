@@ -20,7 +20,13 @@ export const fmt = {
     return '';
   },
   modelShort: m => (m || '').replace('claude-', ''),
-  ts: t => (t || '').slice(0, 16).replace('T', ' '),
+  ts: t => {
+    if (!t) return '';
+    const d = new Date(t);                 // 't' carries 'Z' → parsed as UTC
+    if (isNaN(d.getTime())) return t.slice(0, 16).replace('T', ' ');
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  },
 };
 
 export async function api(path, opts) {
@@ -33,6 +39,7 @@ export const state = { plan: 'api', pricing: null };
 
 const ROUTES = {
   '/overview': () => import('/web/routes/overview.js'),
+  '/trends':   () => import('/web/routes/trends.js'),
   '/prompts':  () => import('/web/routes/prompts.js'),
   '/sessions': () => import('/web/routes/sessions.js'),
   '/projects': () => import('/web/routes/projects.js'),
