@@ -10,7 +10,7 @@ Inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) but di
 
 ## Status
 
-Working codebase. 93 Python unit tests (`python3 -m unittest discover tests`). Eight UI tabs wired up (Overview, Trends, Prompts, Sessions, Projects, Skills, Tips, Settings). Runs on macOS, Windows, and Linux.
+Working codebase. 100 Python unit tests (`python3 -m unittest discover tests`). Nine UI tabs wired up (Overview, Live, Trends, Prompts, Sessions, Projects, Skills, Tips, Settings). Runs on macOS, Windows, and Linux.
 
 ## Architecture
 

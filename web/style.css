@@ -189,6 +189,15 @@ button.ghost { background: transparent; color: var(--muted); }
 .kpi .sub .delta.up   { color: var(--good); }
 .kpi .sub .delta.down { color: var(--bad); }
 
+/* live indicator (Live tab) */
+.live-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--good); box-shadow: 0 0 8px var(--good);
+  display: inline-block; animation: live-pulse 1.6s ease-in-out infinite;
+}
+.live-dot.idle { background: var(--warn); box-shadow: none; animation: none; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
 /* privacy blur */
 .blur-sensitive { transition: filter 120ms; }
 body.privacy-on .blur-sensitive { filter: blur(6px); }
