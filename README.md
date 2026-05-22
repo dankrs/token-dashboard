@@ -1,6 +1,6 @@
 # Token Dashboard
 
-A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based tips engine.
+A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.claude/projects/` and turns them into per-prompt cost analytics, cost-over-time trends with a monthly budget, a live view of the session you're running right now, cost-driver breakdowns (where your dollars go by token type, model, and project), tool/file heatmaps, subagent attribution, cache analytics, project comparisons, and a rule-based suggestions engine — all shown in your local timezone.
 
 **Everything runs locally.** No data leaves your machine — no telemetry, no API calls for your data, no login.
 
@@ -11,6 +11,9 @@ A local dashboard that reads the JSONL transcripts Claude Code writes to `~/.cla
 ## What this is useful for
 
 - Seeing which of your prompts are expensive (surprise: they usually involve large tool results).
+- Seeing what's actually driving your cost — broken down by token type (input / output / cache), model, and project.
+- Tracking your spend over time against a monthly budget you set, with warnings as you approach it.
+- Watching your current session live — burn rate, elapsed time, and how much you've spent today.
 - Comparing token usage across projects you've worked on.
 - Spotting wasteful patterns — the same file read twenty times in a session, a tool call returning 80k tokens.
 - Understanding what a "cache hit" actually saves you.
@@ -118,6 +121,8 @@ Claude Code writes each assistant response 2–3 times to disk while it streams 
 ## Privacy
 
 Nothing leaves your machine. No telemetry. No remote calls for your data. The browser fetches its JSON from `127.0.0.1`, and all JS/CSS/fonts are served from that same local server — ECharts is vendored into `web/`, and the UI falls back to system fonts rather than pulling from a font CDN. If you want to verify: `grep -r "https://" token_dashboard/ web/` — you'll find nothing.
+
+For sharing screenshots, press `Cmd/Ctrl + B` anywhere in the dashboard to blur prompt text, project names, and other sensitive content on screen.
 
 ## Tech stack
 
