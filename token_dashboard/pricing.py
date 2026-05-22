@@ -41,6 +41,20 @@ def cost_for(model: str, usage: dict, pricing: dict) -> dict:
     return {"usd": round(sum(bd.values()), 6), "estimated": estimated, "breakdown": bd}
 
 
+def total_cost(rows, pricing: dict) -> float:
+    """Sum API-equivalent USD over usage rows, skipping unpriceable models.
+
+    Single source of truth for "add up cost across model rows" — used by
+    /api/overview and the trends aggregation so no caller re-implements it.
+    """
+    total = 0.0
+    for r in rows:
+        c = cost_for(r["model"], r, pricing)
+        if c["usd"] is not None:
+            total += c["usd"]
+    return round(total, 6)
+
+
 def get_plan(db_path: Union[str, Path], default: str = "api") -> str:
     with connect(db_path) as c:
         row = c.execute("SELECT v FROM plan WHERE k='plan'").fetchone()
@@ -50,6 +64,31 @@ def get_plan(db_path: Union[str, Path], default: str = "api") -> str:
 def set_plan(db_path: Union[str, Path], plan: str) -> None:
     with connect(db_path) as c:
         c.execute("INSERT OR REPLACE INTO plan (k, v) VALUES ('plan', ?)", (plan,))
+        c.commit()
+
+
+def get_budget(db_path: Union[str, Path]):
+    """Monthly API-equivalent budget in USD, or None if unset.
+
+    Stored in the generic `plan` key/value table (which is really the settings table;
+    a rename is out of scope).
+    """
+    with connect(db_path) as c:
+        row = c.execute("SELECT v FROM plan WHERE k='budget_monthly_usd'").fetchone()
+    if not row or row["v"] in (None, ""):
+        return None
+    try:
+        return float(row["v"])
+    except (TypeError, ValueError):
+        return None
+
+
+def set_budget(db_path: Union[str, Path], monthly_usd: float) -> None:
+    with connect(db_path) as c:
+        c.execute(
+            "INSERT OR REPLACE INTO plan (k, v) VALUES ('budget_monthly_usd', ?)",
+            (str(float(monthly_usd)),),
+        )
         c.commit()
 
 

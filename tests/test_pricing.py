@@ -1,7 +1,11 @@
 import os
+import tempfile
 import unittest
 
-from token_dashboard.pricing import load_pricing, cost_for, format_for_user
+from token_dashboard.pricing import (
+    load_pricing, cost_for, format_for_user, total_cost, get_budget, set_budget,
+)
+from token_dashboard.db import init_db
 
 PRICING = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pricing.json"))
 
@@ -68,6 +72,45 @@ class PlanFormatTests(unittest.TestCase):
         out = format_for_user(12.34, "pro", self.p)
         self.assertEqual(out["subscription_usd"], 20)
         self.assertIn("Pro", out["subtitle"])
+
+
+class TotalCostTests(unittest.TestCase):
+    def setUp(self):
+        self.p = load_pricing(PRICING)
+
+    def _u(self, model, **kw):
+        base = {"model": model, "input_tokens": 0, "output_tokens": 0,
+                "cache_read_tokens": 0, "cache_create_5m_tokens": 0, "cache_create_1h_tokens": 0}
+        base.update(kw)
+        return base
+
+    def test_total_cost_sums_rows(self):
+        rows = [self._u("claude-opus-4-7", input_tokens=1_000_000),    # $5
+                self._u("claude-sonnet-4-6", output_tokens=1_000_000)]  # $15
+        self.assertAlmostEqual(total_cost(rows, self.p), 20.00, places=4)
+
+    def test_total_cost_skips_unpriceable(self):
+        rows = [self._u("claude-opus-4-7", input_tokens=1_000_000),
+                self._u("custom-local-model", input_tokens=1_000_000)]  # usd None -> skipped
+        self.assertAlmostEqual(total_cost(rows, self.p), 5.00, places=4)
+
+
+class BudgetSettingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db = os.path.join(self.tmp, "t.db")
+        init_db(self.db)
+
+    def test_default_none_when_unset(self):
+        self.assertIsNone(get_budget(self.db))
+
+    def test_round_trip(self):
+        set_budget(self.db, 300)
+        self.assertAlmostEqual(get_budget(self.db), 300.0, places=4)
+
+    def test_zero_round_trips_as_zero(self):
+        set_budget(self.db, 0)
+        self.assertEqual(get_budget(self.db), 0.0)
 
 
 if __name__ == "__main__":
