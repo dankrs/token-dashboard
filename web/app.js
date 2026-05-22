@@ -49,13 +49,17 @@ const ROUTES = {
   '/settings': () => import('/web/routes/settings.js'),
 };
 
+// Nav labels default to the route key (capitalized via CSS); override where the
+// visible tab name should differ from the route/URL.
+const NAV_LABELS = { '/tips': 'Suggestions' };
+
 function buildTopbar() {
   const wrap = document.createElement('header');
   wrap.className = 'topbar';
   wrap.innerHTML = `
     <div class="brand">Token Dashboard</div>
     <nav>
-      ${Object.keys(ROUTES).map(p => `<a href="#${p}" data-route="${p}">${p.slice(1)}</a>`).join('')}
+      ${Object.keys(ROUTES).map(p => `<a href="#${p}" data-route="${p}">${NAV_LABELS[p] || p.slice(1)}</a>`).join('')}
     </nav>
     <div class="spacer"></div>
     <span class="pill" id="plan-pill">api</span>
