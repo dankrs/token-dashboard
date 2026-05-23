@@ -164,7 +164,10 @@ def build_handler(db_path: str, projects_dir: str):
                     try:
                         self.wfile.write(chunk)
                         self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
+                    except ConnectionError:
+                        # client disconnected (reload / tab close / route change).
+                        # ConnectionError covers BrokenPipe/Reset/Aborted — the last
+                        # is WinError 10053, raised on Windows when the SSE client drops.
                         return
             self.send_response(404)
             self.end_headers()
